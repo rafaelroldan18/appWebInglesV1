@@ -1,6 +1,5 @@
 import { supabase } from './supabaseClient';
 
-// User Profile Queries
 export const createUserProfile = async (profileData) => {
   const { data, error } = await supabase
     .from('perfil_usuario')
@@ -47,7 +46,6 @@ export const updateUserProfile = async (profileId, updates) => {
   return data;
 };
 
-// Student Management Queries
 export const getStudentsList = async () => {
   const { data, error } = await supabase
     .from('perfil_usuario')
@@ -75,7 +73,7 @@ export const getStudentsList = async () => {
     last_name: student.apellido,
     email: student.correo,
     avatar_url: student.url_avatar,
-    progress: (student.progreso_estudiante?.experiencia_total || 0) / 10, // Convert to percentage
+    progress: (student.progreso_estudiante?.experiencia_total || 0) / 10,
     lastActivity: student.progreso_estudiante?.ultima_actividad || student.fecha_creacion
   }));
 };
@@ -104,11 +102,44 @@ export const getCoursesStats = async () => {
   };
 };
 
-// Activity Queries
+export const getUnits = async () => {
+  const { data, error } = await supabase
+    .from('unidad_aprendizaje')
+    .select('*')
+    .eq('estado', 'publicado')
+    .order('orden', { ascending: true });
+
+  if (error) throw error;
+  return data;
+};
+
+export const getUnitById = async (unitId) => {
+  const { data, error } = await supabase
+    .from('unidad_aprendizaje')
+    .select(`
+      *,
+      tema (
+        *,
+        actividad (*)
+      )
+    `)
+    .eq('id', unitId)
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
 export const getActivities = async () => {
   const { data, error } = await supabase
     .from('actividad')
-    .select('*')
+    .select(`
+      *,
+      tema (
+        *,
+        unidad_aprendizaje (*)
+      )
+    `)
     .order('fecha_creacion', { ascending: false });
 
   if (error) throw error;
@@ -118,7 +149,13 @@ export const getActivities = async () => {
 export const getActivityById = async (activityId) => {
   const { data, error } = await supabase
     .from('actividad')
-    .select('*')
+    .select(`
+      *,
+      tema (
+        *,
+        unidad_aprendizaje (*)
+      )
+    `)
     .eq('id', activityId)
     .single();
 
@@ -126,7 +163,23 @@ export const getActivityById = async (activityId) => {
   return data;
 };
 
-// Progress Queries
+export const getActivitiesByUnit = async (unitId) => {
+  const { data, error } = await supabase
+    .from('actividad')
+    .select(`
+      *,
+      tema!inner (
+        *,
+        unidad_aprendizaje!inner (*)
+      )
+    `)
+    .eq('tema.id_unidad', unitId)
+    .order('orden', { ascending: true });
+
+  if (error) throw error;
+  return data;
+};
+
 export const getUserProgress = async (userId) => {
   const { data, error } = await supabase
     .from('progreso_estudiante')
@@ -135,13 +188,13 @@ export const getUserProgress = async (userId) => {
     .maybeSingle();
 
   if (error) throw error;
-  
-  // Return default progress object if no record exists
+
   if (!data) {
     return {
       id_estudiante: userId,
       nivel_actual: 1,
       experiencia_total: 0,
+      monedas: 0,
       vocabulario_dominado: 0,
       puntos_gramatica: 0,
       racha_diaria: 0,
@@ -156,7 +209,7 @@ export const getUserProgress = async (userId) => {
       }
     };
   }
-  
+
   return data;
 };
 
@@ -172,19 +225,133 @@ export const updateUserProgress = async (userId, progressData) => {
   return data;
 };
 
-// Games Queries
-export const getAvailableGames = async () => {
+export const createUserProgress = async (userId) => {
   const { data, error } = await supabase
-    .from('actividad')
-    .select('*')
-    .eq('formato', 'juego')
-    .order('fecha_creacion', { ascending: false });
+    .from('progreso_estudiante')
+    .insert([{
+      id_estudiante: userId
+    }])
+    .select()
+    .single();
 
   if (error) throw error;
   return data;
 };
 
-// Achievement Queries
+const getActivityIcon = (format) => {
+  const icons = {
+    quiz: '❓',
+    match_up: '🎯',
+    flashcards: '🎴',
+    complete_sentence: '✍️',
+    group_sort: '📊',
+    anagram: '🔤',
+    speaking_cards: '💬'
+  };
+  return icons[format] || '🎮';
+};
+
+export const getAvailableGames = async () => {
+  const { data, error } = await supabase
+    .from('actividad')
+    .select(`
+      *,
+      tema (
+        *,
+        unidad_aprendizaje (*)
+      )
+    `)
+    .order('fecha_creacion', { ascending: false });
+
+  if (error) throw error;
+  return data.map(activity => ({
+    id: activity.id,
+    title: activity.titulo,
+    description: activity.descripcion,
+    category: activity.tipo,
+    difficulty: activity.dificultad === 'facil' ? 'Easy' : activity.dificultad === 'medio' ? 'Medium' : 'Hard',
+    icon: getActivityIcon(activity.formato),
+    xpReward: activity.puntos_maximos,
+    format: activity.formato,
+    content: activity.contenido,
+    unit: activity.tema?.unidad_aprendizaje?.nombre
+  }));
+};
+
+export const getMissions = async () => {
+  const { data, error } = await supabase
+    .from('mision')
+    .select('*')
+    .eq('estado', 'activo')
+    .order('orden', { ascending: true });
+
+  if (error) throw error;
+  return data;
+};
+
+export const getMissionsByType = async (type) => {
+  const { data, error } = await supabase
+    .from('mision')
+    .select('*')
+    .eq('estado', 'activo')
+    .eq('tipo', type)
+    .order('orden', { ascending: true });
+
+  if (error) throw error;
+  return data;
+};
+
+export const getUserMissionProgress = async (userId) => {
+  const { data, error } = await supabase
+    .from('progreso_mision')
+    .select(`
+      *,
+      mision (*)
+    `)
+    .eq('id_estudiante', userId)
+    .order('fecha_inicio', { ascending: false });
+
+  if (error) throw error;
+  return data;
+};
+
+export const startMission = async (userId, missionId) => {
+  const { data, error } = await supabase
+    .from('progreso_mision')
+    .insert([{
+      id_estudiante: userId,
+      id_mision: missionId,
+      estado: 'en_progreso'
+    }])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const updateMissionProgress = async (progressId, updates) => {
+  const { data, error } = await supabase
+    .from('progreso_mision')
+    .update(updates)
+    .eq('id', progressId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const getAllAchievements = async () => {
+  const { data, error } = await supabase
+    .from('logro')
+    .select('*')
+    .order('recompensa_exp', { ascending: true });
+
+  if (error) throw error;
+  return data;
+};
+
 export const getUserAchievements = async (userId) => {
   const { data, error } = await supabase
     .from('logro_usuario')
@@ -192,13 +359,31 @@ export const getUserAchievements = async (userId) => {
       *,
       logro (*)
     `)
-    .eq('id_estudiante', userId);
+    .eq('id_estudiante', userId)
+    .order('fecha_obtencion', { ascending: false });
 
   if (error) throw error;
-  return data.map(achievement => achievement.logro);
+  return data.map(achievement => ({
+    ...achievement.logro,
+    fecha_obtencion: achievement.fecha_obtencion,
+    progreso: achievement.progreso
+  }));
 };
 
-// Activity Attempt Queries
+export const unlockAchievement = async (userId, achievementId) => {
+  const { data, error } = await supabase
+    .from('logro_usuario')
+    .insert([{
+      id_estudiante: userId,
+      id_logro: achievementId
+    }])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
 export const createActivityAttempt = async (attemptData) => {
   const { data, error } = await supabase
     .from('intento_actividad')
@@ -208,6 +393,7 @@ export const createActivityAttempt = async (attemptData) => {
       puntos_obtenidos: attemptData.points_earned,
       porcentaje_precision: attemptData.accuracy_percentage,
       tiempo_segundos: attemptData.time_spent,
+      respuestas: attemptData.answers,
       errores_cometidos: attemptData.mistakes_made,
       estado: attemptData.status,
       retroalimentacion: attemptData.feedback
@@ -228,6 +414,25 @@ export const getUserAttempts = async (userId) => {
     `)
     .eq('id_usuario', userId)
     .order('fecha_creacion', { ascending: false });
+
+  if (error) throw error;
+  return data;
+};
+
+export const getRecentAttempts = async (userId, limit = 5) => {
+  const { data, error } = await supabase
+    .from('intento_actividad')
+    .select(`
+      *,
+      actividad (
+        titulo,
+        tipo,
+        formato
+      )
+    `)
+    .eq('id_usuario', userId)
+    .order('fecha_creacion', { ascending: false })
+    .limit(limit);
 
   if (error) throw error;
   return data;
